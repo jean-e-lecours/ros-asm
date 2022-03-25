@@ -227,64 +227,60 @@ class MapSubscriber{
 bool LaserSubscriber::ready = true;
 LaserData LaserSubscriber::data;
 
-int main(int argc, char **argv)
-{
-  ros::init(argc, argv, "listener");
-  ros::NodeHandle n;
-  ros::Publisher scan_pos = n.advertise<geometry_msgs::Pose>("scan_pos", 1000);
-  ros::Rate rate(5);  
-  params.start_x = n.param<double>("starting_x_pos", 0.25);
-  params.start_y = n.param<double>("starting_y_pos", 0.25);
-  params.start_t = n.param<double>("starting_rad_or", 0);
-  params.dimensions = n.param<int>("dimensions", 2);
-  Point::dims = params.dimensions;
-  Set::dims = params.dimensions;
-  KdTree::dims = params.dimensions;
-  params.max_guesses = n.param<int>("max_guesses", 10);
-  params.corr_factor = n.param<double>("correntropy_factor", 0.1);
-  params.transf_tresh = n.param<double>("transform_match_treshold", 0.0001);
+int main(int argc, char **argv){
+    ros::init(argc, argv, "listener");
+    ros::NodeHandle n;
+    ros::Publisher scan_pos = n.advertise<geometry_msgs::Pose>("scan_pos", 1000);
+    ros::Rate rate(5);  
+    params.start_x = n.param<double>("starting_x_pos", 0.25);
+    params.start_y = n.param<double>("starting_y_pos", 0.25);
+    params.start_t = n.param<double>("starting_rad_or", 0);
+    params.dimensions = n.param<int>("dimensions", 2);
+    Point::dims = params.dimensions;
+    Set::dims = params.dimensions;
+    KdTree::dims = params.dimensions;
+    params.max_guesses = n.param<int>("max_guesses", 10);
+    params.corr_factor = n.param<double>("correntropy_factor", 0.1);
+    params.transf_tresh = n.param<double>("transform_match_treshold", 0.0001);
 
-  Transform2D starting_transf(params.start_x, params.start_y, params.start_t);
-  perm_data.main_transf = &starting_transf;
+    Transform2D starting_transf(params.start_x, params.start_y, params.start_t);
+    perm_data.main_transf = &starting_transf;
 
     //The following technically implements a tf listener but it's not actually needed...
 
-  /* geometry_msgs::TransformStamped transform_stamped;
-  tf2_ros::Buffer tfBuffer;
-  tf2_ros::TransformListener tfListener(tfBuffer);
+    /* geometry_msgs::TransformStamped transform_stamped;
+    tf2_ros::Buffer tfBuffer;
+    tf2_ros::TransformListener tfListener(tfBuffer);
 
-  while(true){
-      try{
-      transform_stamped = tfBuffer.lookupTransform("base_scan", "base_link",ros::Time(0));
+    while(true){
+        try{
+            transform_stamped = tfBuffer.lookupTransform("base_scan", "base_link",ros::Time(0));
+        }
+        catch (tf2::TransformException &ex) {
+            ROS_WARN("%s",ex.what());
+            ros::Duration(1.0).sleep();
+            continue;
+        }
+        ROS_INFO("Found frame");
+        break;
     }
-    catch (tf2::TransformException &ex) {
-      ROS_WARN("%s",ex.what());
-      ros::Duration(1.0).sleep();
-      continue;
-    }
-    ROS_INFO("Found frame");
-    break;
-  }
-
-  Transform2D scan_transf(transform_stamped.transform.translation.x, transform_stamped.transform.translation.y, 
-    atan2(2*(transform_stamped.transform.rotation.w * transform_stamped.transform.rotation.z + transform_stamped.transform.rotation.x * transform_stamped.transform.rotation.y),
-        transform_stamped.transform.rotation.w*transform_stamped.transform.rotation.w + transform_stamped.transform.rotation.x*transform_stamped.transform.rotation.x 
-        - transform_stamped.transform.rotation.y*transform_stamped.transform.rotation.y - transform_stamped.transform.rotation.z*transform_stamped.transform.rotation.z));
+    Transform2D scan_transf(transform_stamped.transform.translation.x, transform_stamped.transform.translation.y, 
+                            atan2(2*(transform_stamped.transform.rotation.w * transform_stamped.transform.rotation.z + transform_stamped.transform.rotation.x * transform_stamped.transform.rotation.y),
+                            transform_stamped.transform.rotation.w*transform_stamped.transform.rotation.w + transform_stamped.transform.rotation.x*transform_stamped.transform.rotation.x 
+                            - transform_stamped.transform.rotation.y*transform_stamped.transform.rotation.y - transform_stamped.transform.rotation.z*transform_stamped.transform.rotation.z));
     
     perm_data.main_transf->add_transform(&scan_transf); */
 
-  LaserSubscriber laser_sub(n);
+    LaserSubscriber laser_sub(n);
     MapSubscriber map_sub(n);
-
-
-  while(ros::ok()){
-      laser_sub.ready = true;
-      ros::spinOnce();
-      if (params.pub_ready){
-          scan_pos.publish(perm_data.msg);
-          params.pub_ready = false;
-      }
-      rate.sleep();
-      }
+    while(ros::ok()){
+        laser_sub.ready = true;
+        ros::spinOnce();
+        if (params.pub_ready){
+            scan_pos.publish(perm_data.msg);
+            params.pub_ready = false;
+        }
+        rate.sleep();
+    }
     return 0;
 }
