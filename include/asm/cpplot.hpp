@@ -25,7 +25,7 @@ class Plot2D{
 
         void plot_data();
 
-        Plot2D(bool keep_data, int max_guesses);
+        Plot2D(bool keep_data, int number_of_plots);
 
     ~Plot2D();
 };

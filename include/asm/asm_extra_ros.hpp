@@ -26,6 +26,8 @@ class Transform2D{
 
         void add_transform(Transform2D* added_transform);
 
+        void set_transform(Transform2D* transform);
+
         Transform2D(double x_trans, double y_trans, double z_rot);
 };
 

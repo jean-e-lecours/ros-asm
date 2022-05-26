@@ -1,116 +1,123 @@
+#include <boost/function/function_base.hpp>
 #include <boost/mpl/count_fwd.hpp>
 #include <iostream>
+#include <memory>
 #include <ros/node_handle.h>
 #include <string>
 #include <cmath>
 #include <vector>
 #include <fstream>
-#include "../include/gnuplot.h"
 
 #include "ros/ros.h"
 #include "std_msgs/String.h"
-
 #include "sensor_msgs/LaserScan.h"
 #include "geometry_msgs/Pose.h"
 #include "geometry_msgs/TransformStamped.h"
-
 #include "tf2_ros/transform_listener.h"
 #include "tf2_geometry_msgs/tf2_geometry_msgs.h"
-
 #include "nav_msgs/OccupancyGrid.h"
+#include "nav_msgs/Odometry.h"
 
-#include "../include/asm/asm_extra_ros.hpp"
-#include "../include/asm/data.hpp"
-#include "../include/asm/kdtree.hpp"
+#include "../include/asm/asm.hpp"
+#include "../include/asm/kdt.hpp"
 #include "../include/asm/mat.hpp"
+#include "../include/asm/psr.hpp"
 
 struct PARAMS{
     int dimensions;
     int max_guesses;
     double corr_factor;
     double transf_tresh;
-    bool init = true;
     bool pub_ready = false;
     double start_x;
     double start_y;
     double start_t;
+    double map_tilt;
 };
-
-int Point::dims = 2;
-int Set::dims = 2;
-int KdTree::dims = 2;
 
 PARAMS params;
 
-struct DATA{
-    Set* old_set;
-    int old_data_size;
-    Transform2D* main_transf;
-    geometry_msgs::Pose msg;
-};
+std::vector<Point2D> map_set;
 
-DATA perm_data;
+KdTree* map_tree;
 
-int func(LaserData* las_data){
-    int guesses = 0;
-    double transf_diff = INFINITY;
-    int data_size = las_data->use_ranges_size;
+Transform2D scan_transf(0,0,0);
+Transform2D odom_transf(0,0,0);
+Transform2D main_transf(0,0,0);
 
-    Transform2D base_transform(0, 0, 0);
+geometry_msgs::Pose msg;
 
-    if (params.init){
-        Set new_set = las_data->map_scan_points(&base_transform);
-        perm_data.old_set = new_set.copy_set();
-        //plot.add_data(perm_data.old_set);
-        params.init = false;
-        //plot.plot_data();
+void make_map_tree(double tilt, std::vector<Point2D> map_set){
+    //We want to avoid horizontal/vertical edges on the map set as much as possible!
+    Transform2D tilt_transform(0,0,tilt);
+    tilt_transform.transform(map_set);
+    map_tree = new KdTree(map_set);
+}
+
+bool nope = false;
+
+int func(std::vector<Point2D> las_data){
+    if (nope){
         return 0;
     }
-    Set new_set = las_data->map_scan_points(&base_transform); //TODO: consider odometry, also maybe this is jank
+    std::cout << "Doing func\n";
+    int guesses = 0;
+    double transf_diff = INFINITY;
 
-    KdTree model_tree(perm_data.old_set);
+    Transform2D base_transf(0,0,0);
 
-    perm_data.old_set = new_set.copy_set();
+    /* if (!nope && perm_data.odom_transf->trans_vec[1] > 1){
+
+            std::cout << perm_data.odom_transf->z_rot << '\n';
+            plot.add_data(perm_data.map_set);
+            plot.add_data(&data_set);
+            plot.plot_data();
+            nope = true;
+            return 0;
+        } */
  
     Transform2D guess_transf(0,0,0);
     Transform2D total_transf(0,0,0);
     
-
     while (transf_diff > params.transf_tresh && guesses < params.max_guesses){
         //Apply guess transform on the set and add it to the total transform
         //The guess transform is with respect to the previous guess
-        guess_transf.transform_set(&new_set);
-        total_transf.add_transform(&guess_transf);
+        guess_transf.transform(las_data);
+        total_transf.add_transform(guess_transf);
 
-        Correlation* corrs = new Correlation[data_size];
-        //Get correlation between points and average for the standard deviation
+        std::vector<Correlation> correlations;
         double corr_mean = 0;
-        //We need to go through the old data as it is the one being compared to the kd tree!
-        for (int i = 0; i < data_size; i++){
-            corrs[i] = Correlation(&model_tree, &new_set, i, &guess_transf);
-            corr_mean += corrs[i].corrected_value;
+        double corr_stdev = 0;
+
+        for (int i = 0; i < las_data.size(); i++){
+            Correlation corr(*map_tree, las_data[i], THOROUGH, guess_transf);
+            corr_mean += corr.corrected_value;
+            correlations.push_back(corr);
         }
-        corr_mean = corr_mean/data_size;
+        
+        //Get correlation between points and average for the standard deviation
+
+        corr_mean = corr_mean/correlations.size();
         /* if (perm_data.main_transf->trans_vec[0] > 1){
             std::cout << "adding more\n";
-            plot.add_data(&new_set);
+            plot.add_data(perm_data.map_set);
+            plot.add_data(&data_set);
             plot.plot_data();
             return 0;
         } */
     
         //Calculate the standard deviation of the corrected value estimate
-        double std_dev = 0;
-        for (int i = 0; i < data_size; i++){
-            std_dev += abs(corrs[i].corrected_value - corr_mean);
-        }
-        std_dev = sqrt(std_dev/data_size);
+        corr_mean = corr_mean/correlations.size();
 
-        //For two dimensions, g is a 1x6 vector and G is a 6x6 matrix
-        double* g = make_g_vector(corrs, &new_set, std_dev, params.corr_factor, data_size, false);
-        double* G = make_G_matrix(corrs, &new_set, std_dev, params.corr_factor, data_size, false);
-        //Solve the system using gaussian elimination
-        //TODO: skip or/and error message on receiving unsolvable system
-        double* x = solve_system(g, G, false);
+        for (int i = 0; i < correlations.size(); i++){
+            corr_stdev += std::abs(correlations[i].corrected_value - corr_mean);
+        }
+        corr_stdev = sqrt(corr_stdev/correlations.size());
+        std::cout << corr_stdev << '\n';
+
+        std::vector<double> g = make_g_vector(correlations, las_data, corr_stdev, params.corr_factor, false);
+        std::vector<double> G = make_G_matrix(correlations, las_data, corr_stdev, params.corr_factor, false);
+        std::vector<double> x = solve_system(g, G, false);
         if (x[0] != x[0]){
             std::cout << "System has no solution! Assuming the robot is stationary..\n";
             x[0] = 1; x[1] = 0; x[2] = 0; x[3] = 1; x[4] = 0; x[5] = 0;
@@ -124,30 +131,31 @@ int func(LaserData* las_data){
     }
     
     //guess_transf.add_transform(perm_data.trans_tranf);
-    guess_transf.transform_set(&new_set);
-    total_transf.add_transform(&guess_transf);
+    guess_transf.transform(las_data);
+    total_transf.add_transform(guess_transf);
+
     
-    perm_data.main_transf->add_transform(&total_transf);
-    
-    data_size = data_size;
-    /* std::cout << "New transform:\n";
-    total_transf.print_transform();
+
+    //NOTE: Doing this now may cause jank
+    total_transf.add_transform(odom_transf);
+    main_transf = total_transf;
+
     std::cout << "Total transform is now:\n";
-    perm_data.main_transf->print_transform(); */
+    main_transf.print_transform();
 
     //Go from Affine to Rotation matrix and publish the rigid transform
-    double angle = std::atan2(perm_data.main_transf->rot_mat[2],perm_data.main_transf->rot_mat[0]);
+    double angle = std::atan2(main_transf.rot_mat[2],main_transf.rot_mat[0]);
 
-    Transform2D rigid_transf(perm_data.main_transf->trans_vec[0], perm_data.main_transf->trans_vec[1], angle);
+    Transform2D rigid_transf(main_transf.trans_vec[0], main_transf.trans_vec[1], angle);
 
-    perm_data.msg.position.x = rigid_transf.trans_vec[0];
-    perm_data.msg.position.y = rigid_transf.trans_vec[1];
-    perm_data.msg.position.z = 0;
+    msg.position.x = rigid_transf.trans_vec[0];
+    msg.position.y = rigid_transf.trans_vec[1];
+    msg.position.z = 0;
 
-    perm_data.msg.orientation.w = 0.5 * sqrt(2 + rigid_transf.rot_mat[0] + rigid_transf.rot_mat[3]);
-    perm_data.msg.orientation.x = 0;
-    perm_data.msg.orientation.y = 0;
-    perm_data.msg.orientation.z = 1/(4.0 * perm_data.msg.orientation.w) * (rigid_transf.rot_mat[2] - rigid_transf.rot_mat[1]);
+    msg.orientation.w = 0.5 * sqrt(2 + rigid_transf.rot_mat[0] + rigid_transf.rot_mat[3]);
+    msg.orientation.x = 0;
+    msg.orientation.y = 0;
+    msg.orientation.z = 1/(4.0 * msg.orientation.w) * (rigid_transf.rot_mat[2] - rigid_transf.rot_mat[1]);
 
     params.pub_ready = true;
     
@@ -159,36 +167,20 @@ class LaserSubscriber{
 
   public:
     static bool ready;
-    static LaserData data;
 
     static void laser_callback(const sensor_msgs::LaserScan::ConstPtr &msg){
         if (ready){
             //std::cout << "receiving data\n";
-            data.angle_incr = msg->angle_increment;
-            data.las_vec.clear();
-            int true_ranges_size = msg->ranges.size();
-            int use_ranges_size = 0;
+            std::vector<double> las_vec;
 
-            for (int i = 0; i < true_ranges_size; i++){
-                data.las_vec.push_back(msg->ranges[i]);
-                /* if (i < true_ranges_size-1){
-                    if (true){
-                        std::cout << msg->ranges[i] << ", ";
-                    }
-                }
-                else{
-                    if (true){
-                        std::cout << msg->ranges[i] << "\n";
-                    }
-                } */
-                if (msg->ranges[i] < INFINITY){
-                    use_ranges_size++; 
-                }
+            for (int i = 0; i < msg->ranges.size(); i++){
+                las_vec.push_back(msg->ranges[i]);
             }
             ready = false;
-            data.use_ranges_size = use_ranges_size;
             //std::cout << "doing func\n";
-            func(&data);
+            //CHECK: Having to use a dereferencing * here is kinda sus...
+            std::vector<Point2D> read_vec = map_scan_points(odom_transf, las_vec, msg->angle_increment);
+            func(read_vec);
         }
     }
     LaserSubscriber(ros::NodeHandle n){
@@ -199,22 +191,25 @@ class LaserSubscriber{
 
 class MapSubscriber{
     ros::Subscriber sub;
-    static std::vector<Point> map_points;
+    static std::vector<Point2D> map_points;
     public:
-        static Set* map_set;
         int number_of_points;
         static bool got_data;
         static void map_callback(const nav_msgs::OccupancyGrid::ConstPtr &msg){
             if (!got_data){
                 std::cout << "Listening for map...\n";
-                Point curr_point(2);
                 for (int i = 0; i < msg->info.width*msg->info.height; i++){
-                    curr_point.val[0] = i%msg->info.height * msg->info.resolution + msg->info.origin.position.x;
-                    curr_point.val[1] = trunc(float(i)/msg->info.width) * msg->info.resolution + msg->info.origin.position.y;
-                    map_points.push_back(curr_point);
+                    if (msg->data[i] > 0){
+                        Point2D curr_point(0,0);
+                        curr_point.x = i%msg->info.height * msg->info.resolution + msg->info.origin.position.x;
+                        curr_point.y = trunc(float(i)/msg->info.width) * msg->info.resolution + msg->info.origin.position.y;
+                        map_points.push_back(curr_point);
+                    }
                 }
-                map_set = new Set(map_points);
+                map_set = map_points;
                 got_data = true;
+                make_map_tree(params.map_tilt, map_set);
+                std::cout << "Made tree\n";
             }
         }
         MapSubscriber(ros::NodeHandle n){
@@ -224,37 +219,63 @@ class MapSubscriber{
 
 };
 
+class OdomSubscriber{
+    ros::Subscriber sub;
+    public:
+        static void odom_callback(const nav_msgs::Odometry::ConstPtr &msg){
+            //std::cout << "Got some odom\n";
+            double odom_angle = atan2(2*(msg->pose.pose.orientation.w * msg->pose.pose.orientation.z + msg->pose.pose.orientation.x * msg->pose.pose.orientation.y),
+                            msg->pose.pose.orientation.w*msg->pose.pose.orientation.w + msg->pose.pose.orientation.x*msg->pose.pose.orientation.x 
+                            - msg->pose.pose.orientation.y*msg->pose.pose.orientation.y - msg->pose.pose.orientation.z*msg->pose.pose.orientation.z);
+            Transform2D temp_transf(msg->pose.pose.position.x, msg->pose.pose.position.y, odom_angle);
+            //std::cout << odom_angle << '\n';
+            temp_transf.add_transform(scan_transf);
+            //temp_transf.print_transform();
+            odom_transf = temp_transf;
+            //std::cout << "Set some odom\n";
+        }
+        OdomSubscriber(ros::NodeHandle n){
+            //Constructor
+            this->sub = n.subscribe("odom", 1000, odom_callback);
+        }
+};
+
 bool LaserSubscriber::ready = true;
-LaserData LaserSubscriber::data;
+bool MapSubscriber::got_data = false;
+std::vector<Point2D> MapSubscriber::map_points;
 
 int main(int argc, char **argv){
+    std::cout << "asm_node started, reading parameters...";
     ros::init(argc, argv, "listener");
     ros::NodeHandle n;
     ros::Publisher scan_pos = n.advertise<geometry_msgs::Pose>("scan_pos", 1000);
-    ros::Rate rate(5);  
+    ros::Rate rate(1);  
     params.start_x = n.param<double>("starting_x_pos", 0.25);
     params.start_y = n.param<double>("starting_y_pos", 0.25);
     params.start_t = n.param<double>("starting_rad_or", 0);
     params.dimensions = n.param<int>("dimensions", 2);
-    Point::dims = params.dimensions;
-    Set::dims = params.dimensions;
-    KdTree::dims = params.dimensions;
     params.max_guesses = n.param<int>("max_guesses", 10);
     params.corr_factor = n.param<double>("correntropy_factor", 0.1);
     params.transf_tresh = n.param<double>("transform_match_treshold", 0.0001);
+    params.map_tilt = n.param<double>("map_tilt", 0.01);
 
+    std::cout << "done It dies here...";
     Transform2D starting_transf(params.start_x, params.start_y, params.start_t);
-    perm_data.main_transf = &starting_transf;
+    
+    main_transf = starting_transf;
+    std::cout << "Actually no\n";
 
     //The following technically implements a tf listener but it's not actually needed...
 
-    /* geometry_msgs::TransformStamped transform_stamped;
+    geometry_msgs::TransformStamped transform_stamped;
     tf2_ros::Buffer tfBuffer;
     tf2_ros::TransformListener tfListener(tfBuffer);
 
+    std::cout << "Looking for transforms...";
+
     while(true){
         try{
-            transform_stamped = tfBuffer.lookupTransform("base_scan", "base_link",ros::Time(0));
+            transform_stamped = tfBuffer.lookupTransform("base_footprint", "base_scan",ros::Time(0));
         }
         catch (tf2::TransformException &ex) {
             ROS_WARN("%s",ex.what());
@@ -264,20 +285,24 @@ int main(int argc, char **argv){
         ROS_INFO("Found frame");
         break;
     }
-    Transform2D scan_transf(transform_stamped.transform.translation.x, transform_stamped.transform.translation.y, 
+    scan_transf = Transform2D(transform_stamped.transform.translation.x, transform_stamped.transform.translation.y, 
                             atan2(2*(transform_stamped.transform.rotation.w * transform_stamped.transform.rotation.z + transform_stamped.transform.rotation.x * transform_stamped.transform.rotation.y),
                             transform_stamped.transform.rotation.w*transform_stamped.transform.rotation.w + transform_stamped.transform.rotation.x*transform_stamped.transform.rotation.x 
                             - transform_stamped.transform.rotation.y*transform_stamped.transform.rotation.y - transform_stamped.transform.rotation.z*transform_stamped.transform.rotation.z));
-    
-    perm_data.main_transf->add_transform(&scan_transf); */
+
+    std::cout << "done.\n Starting subscribers";
 
     LaserSubscriber laser_sub(n);
+    std::cout << "made laser_sub\n";
     MapSubscriber map_sub(n);
+    std::cout << "made map_sub\n";
+    OdomSubscriber odom_sub(n);
+    std::cout << "made odom_sub\n";
     while(ros::ok()){
         laser_sub.ready = true;
         ros::spinOnce();
         if (params.pub_ready){
-            scan_pos.publish(perm_data.msg);
+            scan_pos.publish(msg);
             params.pub_ready = false;
         }
         rate.sleep();

@@ -8,7 +8,7 @@
 
 void Plot2D::add_data(Set *set){
     //Add file name to the array and create the file itself
-    std::string filename = "dat/temp2d_" + std::to_string(number_of_plots)+ ".dat";
+    std::string filename = "src/ros-asm/dat/temp2d_" + std::to_string(number_of_plots)+ ".dat";
     filenames += filename + "|";
 
     std::ofstream osetf{filename};

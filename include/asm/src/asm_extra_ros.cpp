@@ -46,6 +46,7 @@ Point Transform2D::transform_referenced_point(double x, double y){
 }
 void Transform2D::add_transform(Transform2D *added_transform){
     Transform2D temp_transform(0, 0, 0);
+    //TODO: update zrot!!!
     temp_transform.rot_mat[0] = rot_mat[0] * added_transform->rot_mat[0] + rot_mat[1] * added_transform->rot_mat[2];
     temp_transform.rot_mat[1] = rot_mat[0] * added_transform->rot_mat[1] + rot_mat[1] * added_transform->rot_mat[3];
     temp_transform.rot_mat[2] = rot_mat[2] * added_transform->rot_mat[0] + rot_mat[3] * added_transform->rot_mat[2];
@@ -58,6 +59,15 @@ void Transform2D::add_transform(Transform2D *added_transform){
     this->rot_mat[3] = temp_transform.rot_mat[3];
     this->trans_vec[0] = temp_transform.trans_vec[0];
     this->trans_vec[1] = temp_transform.trans_vec[1];
+}
+void Transform2D::set_transform(Transform2D *transform){
+    this->rot_mat[0] = transform->rot_mat[0];
+    this->rot_mat[1] = transform->rot_mat[1];
+    this->rot_mat[2] = transform->rot_mat[2];
+    this->rot_mat[3] = transform->rot_mat[3];
+    this->trans_vec[0] = transform->trans_vec[0];
+    this->trans_vec[1] = transform->trans_vec[1];
+    this->z_rot = transform->z_rot;
 }
 Transform2D::Transform2D(double x_trans, double y_trans, double z_rot){
     //Constructor
@@ -106,6 +116,7 @@ Set LaserData::map_scan_points(Transform2D *transform){
     int las_size = las_vec.size();
     for (int i = 0; i < las_size; i++){
         if (las_vec[i] < 5){
+            //Reading doesn't consider heading direction!!!!
             double temp_scan_x = las_vec[i] * cos(angle_incr * i);
             double temp_scan_y = las_vec[i] * sin(angle_incr * i);
             las_x[j] = transform->trans_vec[0] + temp_scan_x * cos(transform->z_rot) - temp_scan_y * sin(transform->z_rot);
