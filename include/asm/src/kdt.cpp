@@ -57,8 +57,16 @@ Node2D KdTree::populate_node(bool dim, int start, int points_left, int this_inde
         if (new_node.val(dim) < kd_node_array[parent_index].val(dim)){
             kd_node_array[parent_index].sl_index = this_index;
         }
-        else{
+        else if (new_node.val(dim) > kd_node_array[parent_index].val(dim)){
             kd_node_array[parent_index].bl_index = this_index;
+        }
+        else{
+            if (new_node.val(!dim) < kd_node_array[parent_index].val(!dim)){
+                kd_node_array[parent_index].sl_index = this_index;
+            }
+            else if (new_node.val(!dim) > kd_node_array[parent_index].val(!dim)){
+                kd_node_array[parent_index].bl_index = this_index;
+            }
         }
     }
     else{
@@ -74,6 +82,13 @@ void KdTree::make_kd_tree(int dim, int start, int points_left, int parent_index)
                 Point2D temp(points[i].x, points[i].y);
                 points[i] = points[j];
                 points[j] = temp;
+            }
+            else if (points[i].val(dim) == points[j].val(dim)){
+                if (points[i].val(!dim) > points[j].val(!dim)){
+                    Point2D temp(points[i].x, points[i].y);
+                    points[i] = points[j];
+                    points[j] = temp;
+                }
             }
         }
     }

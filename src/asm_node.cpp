@@ -24,7 +24,6 @@
 #include "../include/asm/psr.hpp"
 
 struct PARAMS{
-    int dimensions;
     int max_guesses;
     double corr_factor;
     double transf_tresh;
@@ -32,7 +31,6 @@ struct PARAMS{
     double start_x;
     double start_y;
     double start_t;
-    double map_tilt;
 };
 
 PARAMS params;
@@ -46,13 +44,6 @@ Transform2D odom_transf(0,0,0);
 Transform2D main_transf(0,0,0);
 
 geometry_msgs::Pose msg;
-
-void make_map_tree(double tilt, std::vector<Point2D> map_set){
-    //We want to avoid horizontal/vertical edges on the map set as much as possible!
-    Transform2D tilt_transform(0,0,tilt);
-    tilt_transform.transform(map_set);
-    map_tree = new KdTree(map_set);
-}
 
 bool nope = false;
 
@@ -208,7 +199,7 @@ class MapSubscriber{
                 }
                 map_set = map_points;
                 got_data = true;
-                make_map_tree(params.map_tilt, map_set);
+                map_tree = new KdTree(map_set);
                 std::cout << "Made tree\n";
             }
         }
@@ -253,11 +244,9 @@ int main(int argc, char **argv){
     params.start_x = n.param<double>("starting_x_pos", 0.25);
     params.start_y = n.param<double>("starting_y_pos", 0.25);
     params.start_t = n.param<double>("starting_rad_or", 0);
-    params.dimensions = n.param<int>("dimensions", 2);
     params.max_guesses = n.param<int>("max_guesses", 10);
     params.corr_factor = n.param<double>("correntropy_factor", 0.1);
     params.transf_tresh = n.param<double>("transform_match_treshold", 0.0001);
-    params.map_tilt = n.param<double>("map_tilt", 0.01);
 
     std::cout << "done It dies here...";
     Transform2D starting_transf(params.start_x, params.start_y, params.start_t);
