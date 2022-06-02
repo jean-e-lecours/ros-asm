@@ -247,11 +247,11 @@ int main(int argc, char **argv){
     params.corr_factor = n.param<double>("correntropy_factor", 0.1);
     params.transf_tresh = n.param<double>("transform_match_treshold", 0.0001);
 
-    std::cout << "done It dies here...";
+    //std::cout << "done It dies here...";
     Transform2D starting_transf(params.start_x, params.start_y, params.start_t);
     
     main_transf = starting_transf;
-    std::cout << "Actually no\n";
+    //std::cout << "Actually no\n";
 
     //The following technically implements a tf listener but it's not actually needed...
 
@@ -259,7 +259,7 @@ int main(int argc, char **argv){
     tf2_ros::Buffer tfBuffer;
     tf2_ros::TransformListener tfListener(tfBuffer);
 
-    std::cout << "Looking for transforms...";
+    std::cout << "Looking for transforms...\n";
 
     while(true){
         try{
