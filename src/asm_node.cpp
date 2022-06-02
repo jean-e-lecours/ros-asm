@@ -11,7 +11,7 @@
 #include "ros/ros.h"
 #include "std_msgs/String.h"
 #include "sensor_msgs/LaserScan.h"
-#include "geometry_msgs/Pose.h"
+#include "geometry_msgs/PoseStamped.h"
 #include "geometry_msgs/TransformStamped.h"
 #include "tf2_ros/transform_listener.h"
 #include "tf2_geometry_msgs/tf2_geometry_msgs.h"
@@ -239,7 +239,7 @@ int main(int argc, char **argv){
     std::cout << "asm_node started, reading parameters...";
     ros::init(argc, argv, "listener");
     ros::NodeHandle n;
-    ros::Publisher scan_pos = n.advertise<geometry_msgs::Pose>("scan_pos", 1000);
+    ros::Publisher scan_pos = n.advertise<geometry_msgs::PoseStamped>("asm_pos", 1000);
     ros::Rate rate(1);  
     params.start_x = n.param<double>("starting_x_pos", 0.25);
     params.start_y = n.param<double>("starting_y_pos", 0.25);
