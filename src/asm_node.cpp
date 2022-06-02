@@ -43,7 +43,7 @@ Transform2D scan_transf(0,0,0);
 Transform2D odom_transf(0,0,0);
 Transform2D main_transf(0,0,0);
 
-geometry_msgs::Pose msg;
+geometry_msgs::PoseStamped msg;
 
 bool nope = false;
 
@@ -139,14 +139,14 @@ int func(std::vector<Point2D> las_data){
 
     Transform2D rigid_transf(main_transf.trans_vec[0], main_transf.trans_vec[1], angle);
 
-    msg.position.x = rigid_transf.trans_vec[0];
-    msg.position.y = rigid_transf.trans_vec[1];
-    msg.position.z = 0;
+    msg.pose.position.x = rigid_transf.trans_vec[0];
+    msg.pose.position.y = rigid_transf.trans_vec[1];
+    msg.pose.position.z = 0;
 
-    msg.orientation.w = 0.5 * sqrt(2 + rigid_transf.rot_mat[0] + rigid_transf.rot_mat[3]);
-    msg.orientation.x = 0;
-    msg.orientation.y = 0;
-    msg.orientation.z = 1/(4.0 * msg.orientation.w) * (rigid_transf.rot_mat[2] - rigid_transf.rot_mat[1]);
+    msg.pose.orientation.w = 0.5 * sqrt(2 + rigid_transf.rot_mat[0] + rigid_transf.rot_mat[3]);
+    msg.pose.orientation.x = 0;
+    msg.pose.orientation.y = 0;
+    msg.pose.orientation.z = 1/(4.0 * msg.pose.orientation.w) * (rigid_transf.rot_mat[2] - rigid_transf.rot_mat[1]);
 
     params.pub_ready = true;
     
@@ -291,6 +291,7 @@ int main(int argc, char **argv){
         laser_sub.ready = true;
         ros::spinOnce();
         if (params.pub_ready){
+            msg.header.frame_id = "base_footprint";
             scan_pos.publish(msg);
             params.pub_ready = false;
         }
