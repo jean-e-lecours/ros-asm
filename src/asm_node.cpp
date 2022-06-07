@@ -114,6 +114,11 @@ int func(std::vector<Point2D> las_data){
         }
 
         //Evaluate difference and update guess Transform2D and update
+        double angle = std::atan2(x[2],x[0]);
+        x[0] = cos(angle);
+        x[1] = -sin(angle);
+        x[2] = sin(angle);
+        x[3] = cos(angle);
         transf_diff = guess_transf.compare_transform(x);
         guess_transf.update_transform(x);
 
@@ -138,14 +143,14 @@ int func(std::vector<Point2D> las_data){
 
     Transform2D rigid_transf(main_transf.trans_vec[0], main_transf.trans_vec[1], angle);
 
-    msg.pose.position.x = rigid_transf.trans_vec[0];
-    msg.pose.position.y = rigid_transf.trans_vec[1];
+    msg.pose.position.x = main_transf.trans_vec[0];
+    msg.pose.position.y = main_transf.trans_vec[1];
     msg.pose.position.z = 0;
 
-    msg.pose.orientation.w = 0.5 * sqrt(2 + rigid_transf.rot_mat[0] + rigid_transf.rot_mat[3]);
+    msg.pose.orientation.w = 0.5 * sqrt(2 + main_transf.rot_mat[0] + main_transf.rot_mat[3]);
     msg.pose.orientation.x = 0;
     msg.pose.orientation.y = 0;
-    msg.pose.orientation.z = 1/(4.0 * msg.pose.orientation.w) * (rigid_transf.rot_mat[2] - rigid_transf.rot_mat[1]);
+    msg.pose.orientation.z = 1/(4.0 * msg.pose.orientation.w) * (main_transf.rot_mat[2] - main_transf.rot_mat[1]);
 
     params.pub_ready = true;
     
@@ -206,7 +211,6 @@ class MapSubscriber{
             //Constructor
             this->sub = n.subscribe("map", 1000, map_callback);
         }
-
 };
 
 class OdomSubscriber{
