@@ -32,6 +32,8 @@ struct PARAMS{
     double start_t;
 };
 
+double map_res = 0;
+
 PARAMS params;
 
 std::vector<Point2D> map_set;
@@ -39,6 +41,7 @@ std::vector<Point2D> map_set;
 KdTree* map_tree;
 
 Transform2D scan_transf(0,0,0);
+Transform2D scan_transf_inv(0,0,0);
 Transform2D odom_transf(0,0,0);
 Transform2D main_transf(0,0,0);
 
@@ -68,14 +71,16 @@ int func(std::vector<Point2D> las_data){
  
     Transform2D guess_transf(0,0,0);
     Transform2D total_transf(0,0,0);
+
+    std::vector<Correlation> correlations;
     
     while (transf_diff > params.transf_tresh && guesses < params.max_guesses){
         //Apply guess transform on the set and add it to the total transform
         //The guess transform is with respect to the previous guess
         guess_transf.transform(las_data);
         total_transf.add_transform(guess_transf);
-
-        std::vector<Correlation> correlations;
+        
+        correlations.clear();
         double corr_mean = 0;
         double corr_stdev = 0;
 
@@ -124,7 +129,31 @@ int func(std::vector<Point2D> las_data){
 
         guesses++;
     }
-    
+    std::vector<double> sig_vec = {0,0};
+
+    for (int i = 0; i < correlations.size(); i++){
+        double dist_x = correlations[i].mcor1.x - correlations[i].scan.x;
+        double dist_y = correlations[i].mcor1.y - correlations[i].scan.y;
+        if (sqrt(dist_x*dist_x+dist_y*dist_y) > 1.5*map_res){
+            sig_vec[0] += dist_x;
+            sig_vec[1] += dist_y;
+        }
+    }
+    sig_vec[0] = sig_vec[0]/correlations.size();
+    sig_vec[1] = sig_vec[1]/correlations.size();
+    if (sig_vec[0] > map_res && sig_vec[1] > map_res){
+        Transform2D sig_correct(sig_vec[0],sig_vec[1],0);
+        guess_transf.add_transform(sig_correct);
+    }
+    else if (sig_vec[0] > map_res){
+        Transform2D sig_correct(sig_vec[0],0,0);
+        guess_transf.add_transform(sig_correct);
+    }
+    else if (sig_vec[1] > map_res) {
+        Transform2D sig_correct(0,sig_vec[1],0);
+        guess_transf.add_transform(sig_correct);
+    }
+
     //guess_transf.add_transform(perm_data.trans_tranf);
     guess_transf.transform(las_data);
     total_transf.add_transform(guess_transf);
@@ -133,6 +162,7 @@ int func(std::vector<Point2D> las_data){
 
     //NOTE: Doing this now may cause jank
     total_transf.add_transform(odom_transf);
+    total_transf.add_transform(scan_transf_inv);
     main_transf = total_transf;
 
     std::cout << "Total transform is now:\n";
@@ -195,6 +225,7 @@ class MapSubscriber{
                 std::cout << "Listening for map...\n";
                 for (int i = 0; i < msg->info.width*msg->info.height; i++){
                     if (msg->data[i] > 0){
+                        map_res = msg->info.resolution;
                         Point2D curr_point(0,0);
                         curr_point.x = i%msg->info.height * msg->info.resolution + msg->info.origin.position.x;
                         curr_point.y = trunc(float(i)/msg->info.width) * msg->info.resolution + msg->info.origin.position.y;
@@ -277,11 +308,14 @@ int main(int argc, char **argv){
         ROS_INFO("Found frame");
         break;
     }
-    scan_transf = Transform2D(transform_stamped.transform.translation.x, transform_stamped.transform.translation.y, 
-                            atan2(2*(transform_stamped.transform.rotation.w * transform_stamped.transform.rotation.z + transform_stamped.transform.rotation.x * transform_stamped.transform.rotation.y),
+    double scan_t_x = transform_stamped.transform.translation.x;
+    double scan_t_y = transform_stamped.transform.translation.y;
+    double scan_t_a = atan2(2*(transform_stamped.transform.rotation.w * transform_stamped.transform.rotation.z + transform_stamped.transform.rotation.x * transform_stamped.transform.rotation.y),
                             transform_stamped.transform.rotation.w*transform_stamped.transform.rotation.w + transform_stamped.transform.rotation.x*transform_stamped.transform.rotation.x 
-                            - transform_stamped.transform.rotation.y*transform_stamped.transform.rotation.y - transform_stamped.transform.rotation.z*transform_stamped.transform.rotation.z));
-
+                            - transform_stamped.transform.rotation.y*transform_stamped.transform.rotation.y - transform_stamped.transform.rotation.z*transform_stamped.transform.rotation.z);
+    scan_transf = Transform2D(scan_t_x, scan_t_y, scan_t_a);
+    scan_transf_inv = Transform2D(-scan_t_x, -scan_t_y, -scan_t_a);
+    scan_transf.print_transform();
     std::cout << "done.\n Starting subscribers";
 
     LaserSubscriber laser_sub(n);
