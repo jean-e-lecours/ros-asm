@@ -18,6 +18,7 @@ std::vector<double> make_g_vector(std::vector<Correlation>& corrs, std::vector<P
             g[5] += corrs[i].norm[1] * g_delta;
     }
     if (print){
+        //new comment
         //Print vector so that it can easily be imported into matlab if need be
         std::cout << "g=[" << g[0] << ',' << g[1] << ',' << g[2] << ',' << g[3] << ',' << g[4] << ',' << g[5] << "]\n\n";
     }
