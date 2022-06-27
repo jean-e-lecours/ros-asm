@@ -24,8 +24,6 @@ class Transform2D{
 
         bool is_significant(double threshold);
 
-        double compare_transform(std::vector<double> vector);
-
         Transform2D(double x_trans, double y_trans, double z_rot);
 };
 
@@ -38,6 +36,9 @@ class Correlation{
         std::vector<double> norm = {0,0};
         double corrected_value;
 
+        double get_distance();
+
+        std::vector<double> get_trans();
 
         Correlation(KdTree& map_kdt, Point2D& scan_point, char corr_type, Transform2D& g_transf);
 };

@@ -50,14 +50,13 @@ geometry_msgs::PoseStamped msg;
 bool nope = false;
 
 int func(std::vector<Point2D> las_data){
-    if (nope){
-        return 0;
-    }
+    
     std::cout << "Doing func\n";
     int guesses = 0;
     double transf_diff = INFINITY;
 
     Transform2D base_transf(0,0,0);
+    std::vector<Point2D> pure_las_data = las_data;
 
     /* if (!nope && perm_data.odom_transf->trans_vec[1] > 1){
 
@@ -74,12 +73,7 @@ int func(std::vector<Point2D> las_data){
 
     std::vector<Correlation> correlations;
     
-    while (transf_diff > params.transf_tresh && guesses < params.max_guesses){
-        //Apply guess transform on the set and add it to the total transform
-        //The guess transform is with respect to the previous guess
-        guess_transf.transform(las_data);
-        total_transf.add_transform(guess_transf);
-        
+    do{
         correlations.clear();
         double corr_mean = 0;
         double corr_stdev = 0;
@@ -117,61 +111,64 @@ int func(std::vector<Point2D> las_data){
             std::cout << "System has no solution! Assuming the robot is stationary..\n";
             x[0] = 1; x[1] = 0; x[2] = 0; x[3] = 1; x[4] = 0; x[5] = 0;
         }
-
-        //Evaluate difference and update guess Transform2D and update
-        double angle = std::atan2(x[2],x[0]);
-        x[0] = cos(angle);
-        x[1] = -sin(angle);
-        x[2] = sin(angle);
-        x[3] = cos(angle);
-        transf_diff = guess_transf.compare_transform(x);
         guess_transf.update_transform(x);
 
-        guesses++;
-    }
-    std::vector<double> sig_vec = {0,0};
+        //Apply guess transform on the set and add it to the total transform
+        //The guess transform is with respect to the previous guess
+        guess_transf.transform(las_data);
+        total_transf.add_transform(guess_transf);
 
+        guesses++;
+    } while (guess_transf.is_significant(params.transf_tresh) && guesses < params.max_guesses);
+
+    correlations.clear();
+    for (int i = 0; i < las_data.size(); i++){
+        Correlation corr(*map_tree, las_data[i], THOROUGH, guess_transf);
+        correlations.push_back(corr);
+    }
+    std::vector<double> sig_vec;
     for (int i = 0; i < correlations.size(); i++){
-        double dist_x = correlations[i].mcor1.x - correlations[i].scan.x;
-        double dist_y = correlations[i].mcor1.y - correlations[i].scan.y;
-        if (sqrt(dist_x*dist_x+dist_y*dist_y) > 1.5*map_res){
-            sig_vec[0] += dist_x;
-            sig_vec[1] += dist_y;
+        sig_vec.push_back(correlations[i].get_distance());
+    }
+
+    double angle = std::atan2(total_transf.rot_mat[2],total_transf.rot_mat[0]);
+    Transform2D rigid_transf(total_transf.trans_vec[0], total_transf.trans_vec[1], angle);
+    total_transf = rigid_transf;
+    total_transf.transform(pure_las_data);
+
+    correlations.clear();
+    for (int i = 0; i < pure_las_data.size(); i++){
+        Correlation corr(*map_tree, pure_las_data[i], THOROUGH, guess_transf);
+        correlations.push_back(corr);
+    }
+
+    std::vector<double> corr_trans = {0,0};
+    std::vector<Point2D> sig_points;
+
+    int sig_dist = 0;
+    for (int i = 0; i < correlations.size(); i++){
+        double new_dist = correlations[i].get_distance();
+        if (sig_vec[i] < map_res && new_dist > map_res ){
+            sig_points.push_back(correlations[i].scan);
+            sig_dist++;
+            corr_trans[0] += abs(correlations[i].scan.x - correlations[i].mcor1.x);
+            corr_trans[1] += abs(correlations[i].scan.y - correlations[i].mcor1.y);
         }
     }
-    sig_vec[0] = sig_vec[0]/correlations.size();
-    sig_vec[1] = sig_vec[1]/correlations.size();
-    if (sig_vec[0] > map_res && sig_vec[1] > map_res){
-        Transform2D sig_correct(sig_vec[0],sig_vec[1],0);
-        guess_transf.add_transform(sig_correct);
-    }
-    else if (sig_vec[0] > map_res){
-        Transform2D sig_correct(sig_vec[0],0,0);
-        guess_transf.add_transform(sig_correct);
-    }
-    else if (sig_vec[1] > map_res) {
-        Transform2D sig_correct(0,sig_vec[1],0);
-        guess_transf.add_transform(sig_correct);
-    }
-
-    //guess_transf.add_transform(perm_data.trans_tranf);
-    guess_transf.transform(las_data);
-    total_transf.add_transform(guess_transf);
+    corr_trans[0] = corr_trans[0]/sig_dist;
+    corr_trans[1] = corr_trans[1]/sig_dist;
+    Transform2D add_transf(corr_trans[0],corr_trans[1],0);
+    total_transf.add_transform(add_transf);
 
     
 
-    //NOTE: Doing this now may cause jank
+    //So far the total_transf is the transform when starting at some reference, here purely taken from odometry
     total_transf.add_transform(odom_transf);
     total_transf.add_transform(scan_transf_inv);
     main_transf = total_transf;
 
     std::cout << "Total transform is now:\n";
     main_transf.print_transform();
-
-    //Go from Affine to Rotation matrix and publish the rigid transform
-    double angle = std::atan2(main_transf.rot_mat[2],main_transf.rot_mat[0]);
-
-    Transform2D rigid_transf(main_transf.trans_vec[0], main_transf.trans_vec[1], angle);
 
     msg.pose.position.x = main_transf.trans_vec[0];
     msg.pose.position.y = main_transf.trans_vec[1];
@@ -203,7 +200,7 @@ class LaserSubscriber{
             }
             ready = false;
             //std::cout << "doing func\n";
-            //CHECK: Having to use a dereferencing * here is kinda sus...
+            //The odom_transf is used as the only component in the initial guess. Possibly part of the previous guess could be used as well
             std::vector<Point2D> read_vec = map_scan_points(odom_transf, las_vec, msg->angle_increment);
             func(read_vec);
         }

@@ -98,15 +98,13 @@ bool Transform2D::is_significant(double threshold){
 
 }
 
-double Transform2D::compare_transform(std::vector<double> vector){
-    double transform_diff = 0;
-    transform_diff += (this->rot_mat[0] - vector[0]) * (this->rot_mat[0] - vector[0]);
-    transform_diff += (this->rot_mat[1] - vector[1]) * (this->rot_mat[1] - vector[1]);
-    transform_diff += (this->rot_mat[2] - vector[2]) * (this->rot_mat[2] - vector[2]);
-    transform_diff += (this->rot_mat[3] - vector[3]) * (this->rot_mat[3] - vector[3]);
-    transform_diff += (this->trans_vec[0] - vector[4]) * (this->trans_vec[0] - vector[4]);
-    transform_diff += (this->trans_vec[1] - vector[5]) * (this->trans_vec[1] - vector[5]);
-    return transform_diff/6;
+double Correlation::get_distance(){
+    return sqrt((scan.x - mcor1.x) * (scan.x - mcor1.x) + (scan.y - mcor1.y) * (scan.y - mcor1.y));
+}
+
+std::vector<double> Correlation::get_trans(){
+    std::vector<double> trans = {scan.x - mcor1.x,scan.y - mcor1.y};
+    return trans;
 }
 
 Correlation::Correlation(KdTree& map_kdt, Point2D& scan_point, char corr_type, Transform2D& g_transf){
