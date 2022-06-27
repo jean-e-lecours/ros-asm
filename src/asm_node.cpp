@@ -1,5 +1,3 @@
-#include <boost/function/function_base.hpp>
-#include <boost/mpl/count_fwd.hpp>
 #include <iostream>
 #include <memory>
 #include <ros/node_handle.h>
