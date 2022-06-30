@@ -42,6 +42,7 @@ Transform2D scan_transf(0,0,0);
 Transform2D scan_transf_inv(0,0,0);
 Transform2D odom_transf(0,0,0);
 Transform2D main_transf(0,0,0);
+Transform2D las_pos_transf(0,0,0);
 
 geometry_msgs::PoseStamped msg;
 
@@ -51,20 +52,9 @@ int func(std::vector<Point2D> las_data){
     
     std::cout << "Doing func\n";
     int guesses = 0;
-    double transf_diff = INFINITY;
 
     Transform2D base_transf(0,0,0);
     std::vector<Point2D> pure_las_data = las_data;
-
-    /* if (!nope && perm_data.odom_transf->trans_vec[1] > 1){
-
-            std::cout << perm_data.odom_transf->z_rot << '\n';
-            plot.add_data(perm_data.map_set);
-            plot.add_data(&data_set);
-            plot.plot_data();
-            nope = true;
-            return 0;
-        } */
  
     Transform2D guess_transf(0,0,0);
     Transform2D total_transf(0,0,0);
@@ -85,13 +75,6 @@ int func(std::vector<Point2D> las_data){
         //Get correlation between points and average for the standard deviation
 
         corr_mean = corr_mean/correlations.size();
-        /* if (perm_data.main_transf->trans_vec[0] > 1){
-            std::cout << "adding more\n";
-            plot.add_data(perm_data.map_set);
-            plot.add_data(&data_set);
-            plot.plot_data();
-            return 0;
-        } */
     
         //Calculate the standard deviation of the corrected value estimate
         corr_mean = corr_mean/correlations.size();
@@ -100,7 +83,6 @@ int func(std::vector<Point2D> las_data){
             corr_stdev += std::abs(correlations[i].corrected_value - corr_mean);
         }
         corr_stdev = sqrt(corr_stdev/correlations.size());
-        std::cout << corr_stdev << '\n';
 
         std::vector<double> g = make_g_vector(correlations, las_data, corr_stdev, params.corr_factor, false);
         std::vector<double> G = make_G_matrix(correlations, las_data, corr_stdev, params.corr_factor, false);
@@ -113,6 +95,9 @@ int func(std::vector<Point2D> las_data){
 
         //Apply guess transform on the set and add it to the total transform
         //The guess transform is with respect to the previous guess
+        //double angle = std::atan2(guess_transf.rot_mat[2],guess_transf.rot_mat[0]);
+        //Transform2D rigid_guess(guess_transf.trans_vec[0], guess_transf.trans_vec[1], angle);
+
         guess_transf.transform(las_data);
         total_transf.add_transform(guess_transf);
 
@@ -126,7 +111,7 @@ int func(std::vector<Point2D> las_data){
     }
     std::vector<double> sig_vec;
     for (int i = 0; i < correlations.size(); i++){
-        sig_vec.push_back(correlations[i].get_distance());
+        sig_vec.push_back(correlations[i].get_distance()); 
     }
 
     double angle = std::atan2(total_transf.rot_mat[2],total_transf.rot_mat[0]);
@@ -135,8 +120,9 @@ int func(std::vector<Point2D> las_data){
     total_transf.transform(pure_las_data);
 
     correlations.clear();
+    Transform2D basic_transf(0,0,0);
     for (int i = 0; i < pure_las_data.size(); i++){
-        Correlation corr(*map_tree, pure_las_data[i], THOROUGH, guess_transf);
+        Correlation corr(*map_tree, pure_las_data[i], THOROUGH, basic_transf);
         correlations.push_back(corr);
     }
 
@@ -146,27 +132,51 @@ int func(std::vector<Point2D> las_data){
     int sig_dist = 0;
     for (int i = 0; i < correlations.size(); i++){
         double new_dist = correlations[i].get_distance();
-        if (sig_vec[i] < map_res && new_dist > map_res ){
+        if (sig_vec[i] < map_res && new_dist > 1.5*map_res ){
             sig_points.push_back(correlations[i].scan);
             sig_dist++;
-            corr_trans[0] += abs(correlations[i].scan.x - correlations[i].mcor1.x);
-            corr_trans[1] += abs(correlations[i].scan.y - correlations[i].mcor1.y);
+            corr_trans = correlations[i].get_trans();
         }
     }
-    corr_trans[0] = corr_trans[0]/sig_dist;
-    corr_trans[1] = corr_trans[1]/sig_dist;
-    Transform2D add_transf(corr_trans[0],corr_trans[1],0);
-    total_transf.add_transform(add_transf);
-
+    if (sig_dist > 0){
+        if (corr_trans[0] > map_res){
+            corr_trans[0] = corr_trans[0]/sig_dist - map_res/2;
+        }
+        else if(corr_trans[0] < map_res){
+            corr_trans[0] = corr_trans[0]/sig_dist + map_res/2;
+        }
+        else{
+            corr_trans[0] = 0;
+        }
+        if (corr_trans[1] > map_res){
+            corr_trans[1] = corr_trans[1]/sig_dist - map_res/2;
+        }
+        else if (corr_trans[1] < map_res){
+            corr_trans[1] = corr_trans[1]/sig_dist + map_res/2;
+        }
+        else{
+            corr_trans[1] = 0;
+        }
+        
+        Transform2D add_transf(corr_trans[0],corr_trans[1],0);
+        total_transf.print_transform();
+        total_transf.add_transform(add_transf);
+    }
     
+    total_transf.print_transform();
+
+    std::cout << sig_dist << " significant distances, consensus around " << corr_trans[0] << ", "<< corr_trans[1] << "\n";
 
     //So far the total_transf is the transform when starting at some reference, here purely taken from odometry
     total_transf.add_transform(odom_transf);
-    total_transf.add_transform(scan_transf_inv);
+    total_transf.print_transform();
+    //scan_transf_inv.print_transform();
     main_transf = total_transf;
 
     std::cout << "Total transform is now:\n";
+    ROS_INFO("NEW ASM ESTIMATE AVAILABLE");
     main_transf.print_transform();
+    //rigid_transf.print_transform();
 
     msg.pose.position.x = main_transf.trans_vec[0];
     msg.pose.position.y = main_transf.trans_vec[1];
@@ -197,9 +207,9 @@ class LaserSubscriber{
                 las_vec.push_back(msg->ranges[i]);
             }
             ready = false;
-            //std::cout << "doing func\n";
+            std::cout << "doing func\n";
             //The odom_transf is used as the only component in the initial guess. Possibly part of the previous guess could be used as well
-            std::vector<Point2D> read_vec = map_scan_points(odom_transf, las_vec, msg->angle_increment);
+            std::vector<Point2D> read_vec = map_scan_points(las_pos_transf, las_vec, msg->angle_increment);
             func(read_vec);
         }
     }
@@ -222,11 +232,38 @@ class MapSubscriber{
                     if (msg->data[i] > 0){
                         map_res = msg->info.resolution;
                         Point2D curr_point(0,0);
-                        curr_point.x = i%msg->info.height * msg->info.resolution + msg->info.origin.position.x;
+                        curr_point.x = i%msg->info.width * msg->info.resolution + msg->info.origin.position.x;
                         curr_point.y = trunc(float(i)/msg->info.width) * msg->info.resolution + msg->info.origin.position.y;
                         map_points.push_back(curr_point);
                     }
                 }
+                /* for (int i = 0; i < msg->info.width*msg->info.height; i++){
+                    if (msg->data[i] > 0){
+                        map_res = msg->info.resolution;
+                        Point2D curr_point(0,0);
+                        if (i < msg->info.width && msg->data[i+1] <= 0){
+                            //Free space detected in the next positive x position
+                            curr_point.x = i%msg->info.width * msg->info.resolution + msg->info.origin.position.x + map_res/2;
+                            curr_point.y = trunc(float(i)/msg->info.width) * msg->info.resolution + msg->info.origin.position.y;
+                        }
+                        else if (i > 0 && msg->data[i-1] <= 0){
+                            //Free space detected in the previous negative x position
+                            curr_point.x = i%msg->info.width * msg->info.resolution + msg->info.origin.position.x;
+                            curr_point.y = trunc(float(i)/msg->info.width) * msg->info.resolution;
+                        }
+                        else if (i > msg->info.width && msg->data[i-msg->info.width]){
+                            //Free space detected in the previous negative y direction
+                            curr_point.x = i%msg->info.width * msg->info.resolution + msg->info.origin.position.x;
+                            curr_point.y = trunc(float(i)/msg->info.width) * msg->info.resolution + msg->info.origin.position.y - map_res/2;
+                        }
+                        else if (i < msg->info.width * (msg->info.height)-1 && msg->data[i+msg->info.width]){
+                            //Free space detected in the next positive y direction
+                            curr_point.x = i%msg->info.width * msg->info.resolution + msg->info.origin.position.x;
+                            curr_point.y = trunc(float(i)/msg->info.width) * msg->info.resolution + msg->info.origin.position.y + map_res/2;
+                        }
+                        map_points.push_back(curr_point);
+                    }
+                } */
                 map_set = map_points;
                 got_data = true;
                 map_tree = new KdTree(map_set);
@@ -249,9 +286,10 @@ class OdomSubscriber{
                             - msg->pose.pose.orientation.y*msg->pose.pose.orientation.y - msg->pose.pose.orientation.z*msg->pose.pose.orientation.z);
             Transform2D temp_transf(msg->pose.pose.position.x, msg->pose.pose.position.y, odom_angle);
             //std::cout << odom_angle << '\n';
+            odom_transf = temp_transf;
             temp_transf.add_transform(scan_transf);
             //temp_transf.print_transform();
-            odom_transf = temp_transf;
+            las_pos_transf = temp_transf;
             //std::cout << "Set some odom\n";
         }
         OdomSubscriber(ros::NodeHandle n){
@@ -275,7 +313,7 @@ int main(int argc, char **argv){
     params.start_t = n.param<double>("starting_rad_or", 0);
     params.max_guesses = n.param<int>("max_guesses", 10);
     params.corr_factor = n.param<double>("correntropy_factor", 0.1);
-    params.transf_tresh = n.param<double>("transform_match_treshold", 0.0001);
+    params.transf_tresh = n.param<double>("transform_match_treshold", 0.001);
 
     //std::cout << "done It dies here...";
     Transform2D starting_transf(params.start_x, params.start_y, params.start_t);
@@ -290,6 +328,8 @@ int main(int argc, char **argv){
     tf2_ros::TransformListener tfListener(tfBuffer);
 
     std::cout << "Looking for transforms...\n";
+
+    ros::Duration(1.0).sleep();
 
     while(true){
         try{

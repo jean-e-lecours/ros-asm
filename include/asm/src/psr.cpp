@@ -99,11 +99,12 @@ bool Transform2D::is_significant(double threshold){
 }
 
 double Correlation::get_distance(){
-    return sqrt((scan.x - mcor1.x) * (scan.x - mcor1.x) + (scan.y - mcor1.y) * (scan.y - mcor1.y));
+    return fabs(norm[0]*(scan.x - (mcor1.x+mcor2.x)/2) + norm[1]*(scan.y - (mcor1.y + mcor2.y)/2));
 }
 
 std::vector<double> Correlation::get_trans(){
-    std::vector<double> trans = {scan.x - mcor1.x,scan.y - mcor1.y};
+
+    std::vector<double> trans = {this->get_distance()*norm[0],this->get_distance()*norm[1]};
     return trans;
 }
 
