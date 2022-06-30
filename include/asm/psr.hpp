@@ -35,22 +35,12 @@ class Correlation{
 
         std::vector<double> norm = {0,0};
         double corrected_value;
-
+        
         double get_distance();
 
         std::vector<double> get_trans();
 
         Correlation(KdTree& map_kdt, Point2D& scan_point, char corr_type, Transform2D& g_transf);
-};
-
-class LaserData{
-    
-    public:
-        std::vector<double> las_vec;
-        int use_ranges_size;
-        double angle_incr;
-
-        std::vector<Point2D> map_scan_points(Transform2D& transform);
 };
 
 std::vector<Point2D> map_scan_points(Transform2D& transform, std::vector<double> las_vec, double scan_period);

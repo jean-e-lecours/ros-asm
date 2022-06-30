@@ -67,7 +67,7 @@ int func(std::vector<Point2D> las_data){
         double corr_stdev = 0;
 
         for (int i = 0; i < las_data.size(); i++){
-            Correlation corr(*map_tree, las_data[i], THOROUGH, guess_transf);
+            Correlation corr(*map_tree, las_data[i], THOROUGH, total_transf);
             corr_mean += corr.corrected_value;
             correlations.push_back(corr);
         }
@@ -84,8 +84,8 @@ int func(std::vector<Point2D> las_data){
         }
         corr_stdev = sqrt(corr_stdev/correlations.size());
 
-        std::vector<double> g = make_g_vector(correlations, las_data, corr_stdev, params.corr_factor, false);
-        std::vector<double> G = make_G_matrix(correlations, las_data, corr_stdev, params.corr_factor, false);
+        std::vector<double> g = make_g_vector(correlations, corr_stdev, params.corr_factor, false);
+        std::vector<double> G = make_G_matrix(correlations, corr_stdev, params.corr_factor, false);
         std::vector<double> x = solve_system(g, G, false);
         if (x[0] != x[0]){
             std::cout << "System has no solution! Assuming the robot is stationary..\n";
@@ -95,16 +95,16 @@ int func(std::vector<Point2D> las_data){
 
         //Apply guess transform on the set and add it to the total transform
         //The guess transform is with respect to the previous guess
-        //double angle = std::atan2(guess_transf.rot_mat[2],guess_transf.rot_mat[0]);
-        //Transform2D rigid_guess(guess_transf.trans_vec[0], guess_transf.trans_vec[1], angle);
+        double angle = std::atan2(guess_transf.rot_mat[2],guess_transf.rot_mat[0]);
+        Transform2D rigid_guess(guess_transf.trans_vec[0], guess_transf.trans_vec[1], angle);
 
-        guess_transf.transform(las_data);
+        guess_transf = rigid_guess;
         total_transf.add_transform(guess_transf);
 
         guesses++;
     } while (guess_transf.is_significant(params.transf_tresh) && guesses < params.max_guesses);
 
-    correlations.clear();
+    /* correlations.clear();
     for (int i = 0; i < las_data.size(); i++){
         Correlation corr(*map_tree, las_data[i], THOROUGH, guess_transf);
         correlations.push_back(corr);
@@ -165,7 +165,7 @@ int func(std::vector<Point2D> las_data){
     
     total_transf.print_transform();
 
-    std::cout << sig_dist << " significant distances, consensus around " << corr_trans[0] << ", "<< corr_trans[1] << "\n";
+    std::cout << sig_dist << " significant distances, consensus around " << corr_trans[0] << ", "<< corr_trans[1] << "\n"; */
 
     //So far the total_transf is the transform when starting at some reference, here purely taken from odometry
     total_transf.add_transform(odom_transf);

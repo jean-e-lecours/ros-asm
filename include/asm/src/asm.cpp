@@ -1,7 +1,8 @@
 #include "../asm.hpp"
 #include <iomanip>
+#include <iostream>
 
-std::vector<double> make_g_vector(std::vector<Correlation>& corrs, std::vector<Point2D>& scan_pts, double stdev, double correntropy_factor, bool print){
+std::vector<double> make_g_vector(std::vector<Correlation>& corrs, double stdev, double correntropy_factor, bool print){
     std::vector<double> g = {0,0,0,0,0,0};
     double delta = 0;
     double g_delta = 0;
@@ -10,10 +11,10 @@ std::vector<double> make_g_vector(std::vector<Correlation>& corrs, std::vector<P
             delta = exp(- corrs[i].corrected_value * corrs[i].corrected_value / (2 * correntropy_factor * stdev));
             g_delta = (corrs[i].mcor1.x * corrs[i].norm[0] + corrs[i].mcor1.y * corrs[i].norm[1]) * delta;
             //g = [nx⋅px⋅(mx⋅nx + my⋅ny)  nx⋅py⋅(mx⋅nx + my⋅ny)  ny⋅px⋅(mx⋅nx + my⋅ny)  ny⋅py⋅(mx⋅nx + my⋅ny)  nx⋅(mx⋅nx + my⋅ny)  ny⋅(mx⋅nx+ my⋅ny)]
-            g[0] += corrs[i].norm[0] * scan_pts[i].x * g_delta;
-            g[1] += corrs[i].norm[0] * scan_pts[i].y * g_delta;
-            g[2] += corrs[i].norm[1] * scan_pts[i].x * g_delta;
-            g[3] += corrs[i].norm[1] * scan_pts[i].y * g_delta;
+            g[0] += corrs[i].norm[0] * corrs[i].scan.x * g_delta;
+            g[1] += corrs[i].norm[0] * corrs[i].scan.y * g_delta;
+            g[2] += corrs[i].norm[1] * corrs[i].scan.x * g_delta;
+            g[3] += corrs[i].norm[1] * corrs[i].scan.y * g_delta;
             g[4] += corrs[i].norm[0] * g_delta;
             g[5] += corrs[i].norm[1] * g_delta;
     }
@@ -23,7 +24,7 @@ std::vector<double> make_g_vector(std::vector<Correlation>& corrs, std::vector<P
     }
     return g;
 }
-std::vector<double> make_G_matrix(std::vector<Correlation>& corrs, std::vector<Point2D>& scan_pts, double stdev, double correntropy_factor, bool print){
+std::vector<double> make_G_matrix(std::vector<Correlation>& corrs, double stdev, double correntropy_factor, bool print){
     std::vector<double> G = {0,0,0,0,0,0,
                              0,0,0,0,0,0,
                              0,0,0,0,0,0,
@@ -53,30 +54,30 @@ std::vector<double> make_G_matrix(std::vector<Correlation>& corrs, std::vector<P
         ⎢                                    2              2                       2   ⎥
         ⎣30 nx⋅ny⋅px    31 nx⋅ny⋅py     32 ny ⋅px      33 ny ⋅py     34 nx⋅ny     35 ny    ⎦ */
 
-        G[0] += corrs[i].norm[0] * corrs[i].norm[0] * scan_pts[i].x * scan_pts[i].x * delta;
-        G[7] += corrs[i].norm[0] * corrs[i].norm[0] * scan_pts[i].y * scan_pts[i].y * delta;
-        G[14] += corrs[i].norm[1] * corrs[i].norm[1] * scan_pts[i].x * scan_pts[i].x * delta;
-        G[21] += corrs[i].norm[1] * corrs[i].norm[1] * scan_pts[i].y * scan_pts[i].y * delta;
+        G[0] += corrs[i].norm[0] * corrs[i].norm[0] * corrs[i].scan.x * corrs[i].scan.x * delta;
+        G[7] += corrs[i].norm[0] * corrs[i].norm[0] * corrs[i].scan.y * corrs[i].scan.y * delta;
+        G[14] += corrs[i].norm[1] * corrs[i].norm[1] * corrs[i].scan.x * corrs[i].scan.x * delta;
+        G[21] += corrs[i].norm[1] * corrs[i].norm[1] * corrs[i].scan.y * corrs[i].scan.y * delta;
         G[28] += corrs[i].norm[0] * corrs[i].norm[0] * delta;
         G[35] += corrs[i].norm[1] * corrs[i].norm[1] * delta;
 
-        G[1] += corrs[i].norm[0] * corrs[i].norm[0] * scan_pts[i].x * scan_pts[i].y * delta; G[6] = G[1];//xx xy
-        G[2] += corrs[i].norm[0] * corrs[i].norm[1] * scan_pts[i].x * scan_pts[i].x * delta; G[12] = G[2];//xy xx
-        G[3] += corrs[i].norm[0] * corrs[i].norm[1] * scan_pts[i].x * scan_pts[i].y * delta; G[18] = G[3];//xy xy
-        G[4] += corrs[i].norm[0] * corrs[i].norm[0] * scan_pts[i].x * delta;                              G[24] = G[4];//xx x
-        G[5] += corrs[i].norm[0] * corrs[i].norm[1] * scan_pts[i].x * delta;                              G[30] = G[5];//xy x
+        G[1] += corrs[i].norm[0] * corrs[i].norm[0] * corrs[i].scan.x * corrs[i].scan.y * delta; G[6] = G[1];//xx xy
+        G[2] += corrs[i].norm[0] * corrs[i].norm[1] * corrs[i].scan.x * corrs[i].scan.x * delta; G[12] = G[2];//xy xx
+        G[3] += corrs[i].norm[0] * corrs[i].norm[1] * corrs[i].scan.x * corrs[i].scan.y * delta; G[18] = G[3];//xy xy
+        G[4] += corrs[i].norm[0] * corrs[i].norm[0] * corrs[i].scan.x * delta;                              G[24] = G[4];//xx x
+        G[5] += corrs[i].norm[0] * corrs[i].norm[1] * corrs[i].scan.x * delta;                              G[30] = G[5];//xy x
 
         //G[8]           -- This is equal to G[3] so we don't compute it here --                                      //xy xy
-        G[9] += corrs[i].norm[0] * corrs[i].norm[1] * scan_pts[i].y * scan_pts[i].y * delta; G[19] = G[9];//xy yy
-        G[10] += corrs[i].norm[0] * corrs[i].norm[0] * scan_pts[i].y * delta;                             G[25] = G[10];//xx y
-        G[11] += corrs[i].norm[0] * corrs[i].norm[1] * scan_pts[i].y * delta;                             G[31] = G[11];//xy y
+        G[9] += corrs[i].norm[0] * corrs[i].norm[1] * corrs[i].scan.y * corrs[i].scan.y * delta; G[19] = G[9];//xy yy
+        G[10] += corrs[i].norm[0] * corrs[i].norm[0] * corrs[i].scan.y * delta;                             G[25] = G[10];//xx y
+        G[11] += corrs[i].norm[0] * corrs[i].norm[1] * corrs[i].scan.y * delta;                             G[31] = G[11];//xy y
 
-        G[15] += corrs[i].norm[1] * corrs[i].norm[1] * scan_pts[i].x * scan_pts[i].y * delta; G[20] = G[15];//yy xy
+        G[15] += corrs[i].norm[1] * corrs[i].norm[1] * corrs[i].scan.x * corrs[i].scan.y * delta; G[20] = G[15];//yy xy
         //G[16]          -- This is equal to G[5] so we don't compute it here --                         //xy x
-        G[17] += corrs[i].norm[1] * corrs[i].norm[1] * scan_pts[i].x * delta;                             G[32] = G[17];//yy x
+        G[17] += corrs[i].norm[1] * corrs[i].norm[1] * corrs[i].scan.x * delta;                             G[32] = G[17];//yy x
         
         //G[22]          -- This is equal to G[11] so we don't compute it here --                         //xy y
-        G[23] += corrs[i].norm[1] * corrs[i].norm[1] * scan_pts[i].y * delta;                             G[33] = G[23];//yy y
+        G[23] += corrs[i].norm[1] * corrs[i].norm[1] * corrs[i].scan.y * delta;                             G[33] = G[23];//yy y
         G[29] += corrs[i].norm[0] * corrs[i].norm[1] * delta;                                             G[34] = G[29];//xy
 
     }

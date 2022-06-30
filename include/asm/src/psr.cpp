@@ -50,6 +50,7 @@ Transform2D::Transform2D(double x_trans, double y_trans, double z_rot){
 
     this->z_rot = z_rot;
 }
+
 std::vector<Point2D> map_scan_points(Transform2D& transform, std::vector<double> las_vec, double scan_period){
     std::vector<Point2D> mapped_pts_vec;
     int j = 0;
@@ -99,18 +100,19 @@ bool Transform2D::is_significant(double threshold){
 }
 
 double Correlation::get_distance(){
-    return fabs(norm[0]*(scan.x - (mcor1.x+mcor2.x)/2) + norm[1]*(scan.y - (mcor1.y + mcor2.y)/2));
+    return sqrt((scan.x - mcor1.x) * (scan.x - mcor1.x) + (scan.y - mcor1.y) * (scan.y - mcor1.y));
 }
 
 std::vector<double> Correlation::get_trans(){
-
-    std::vector<double> trans = {this->get_distance()*norm[0],this->get_distance()*norm[1]};
+    std::vector<double> trans = {scan.x - mcor1.x,scan.y - mcor1.y};
     return trans;
 }
 
 Correlation::Correlation(KdTree& map_kdt, Point2D& scan_point, char corr_type, Transform2D& g_transf){
-    scan = scan_point;
-    std::vector<int> ids = map_kdt.find_closest_point(scan_point, 0, corr_type);
+    scan.x = g_transf.rot_mat[0]*scan_point.x + g_transf.rot_mat[1]*scan_point.y + g_transf.trans_vec[0];
+    scan.y = g_transf.rot_mat[2]*scan_point.x + g_transf.rot_mat[3]*scan_point.y + g_transf.trans_vec[1];
+    std::vector<int> ids = map_kdt.find_closest_point(scan, 0, corr_type);
+    
     mcor1.x = map_kdt.kd_node_array[ids[0]].x;
     mcor1.y = map_kdt.kd_node_array[ids[0]].y;
     mcor2.x = map_kdt.kd_node_array[ids[1]].x;
@@ -122,8 +124,7 @@ Correlation::Correlation(KdTree& map_kdt, Point2D& scan_point, char corr_type, T
     norm[0] = norm[0]/norm_size;
     norm[1] = norm[1]/norm_size;
 
-    corrected_value = norm[0]*(g_transf.rot_mat[0]*scan_point.x + g_transf.rot_mat[1]*scan_point.y + g_transf.trans_vec[0] - mcor1.x) + \
-                                norm[1]*(g_transf.rot_mat[2]*scan_point.x + g_transf.rot_mat[3]*scan_point.y + g_transf.trans_vec[1] - mcor1.y);
+    corrected_value = norm[0]*(scan.x - mcor1.x) + norm[1]*(scan.y - mcor1.y);
 }
 
 std::vector<Point2D> make_map(std::vector<double> map_vec, int grid_size_x, int grid_size_y, double pix_res){
