@@ -36,7 +36,11 @@ add_executable(asm_node src/asm_node.cpp)
 set(ASM_LIBS
     include/asm/src/psr.cpp
     include/asm/src/asm.cpp
-    include/asm/src/kdt.cpp)
+    include/asm/src/kdt.cpp
+    include/asm/src/test.cpp)
+
+
 add_library(asm_lib ${ASM_LIBS})
+add_library(gnuplotcpp INTERFACE)
 
 target_link_libraries(asm_node asm_lib ${catkin_LIBRARIES})
